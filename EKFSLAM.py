@@ -133,7 +133,6 @@ class EKFSLAM:
         x = eta[:3]
         etapred[:3] = self.f(x,z_odo) # TODO robot state prediction
         etapred[3:] = eta[3:]# TODO landmarks: no effect
-        
         Fx =self.Fx(x,z_odo)# TODO
         Fu =self.Fu(x,z_odo)# TODO
 
@@ -143,10 +142,16 @@ class EKFSLAM:
         # [[P_xx, P_xm],
         # [P_mx, P_mm]]
         F=block_diag(Fx,np.eye(len(eta)-3,))
-        G=np.block([np.eye(3,3),np.zeros((len(eta)-3,3))])
-        P[:3, :3] = F@P[:3,:3]@F.T+G@Q@G.T# TODO robot cov prediction
-        #P[:3, 3:] = # TODO robot-map covariance prediction, Should be something??
-        #P[3:, :3] =P[:3, 3:].T # TODO map-robot covariance: transpose of the above
+        G=np.block([[np.eye(3,3)],[np.zeros((len(eta)-3,3))]])
+        """
+        input(F)
+        input(P[:3,:3])
+        input(G)
+        """
+        #P[:3, :3] = F@P[:3,:3]@F.T+G@Q@G.T# TODO robot cov prediction
+        P[:3, :3] = Fx@P[:3,:3]@Fx.T+Fu@self.Q@Fu.T
+        P[:3, 3:] = Fx@P[:3,3:]# TODO robot-map covariance prediction, Should be something??
+        P[3:, :3] =P[:3, 3:].T # TODO map-robot covariance: transpose of the above
 
         assert np.allclose(P, P.T), "EKFSLAM.predict: not symmetric P"
         assert np.all(
@@ -194,12 +199,14 @@ class EKFSLAM:
         #  bearings]
         # into shape (2, #lmrk)
         """
-
-        z_c=m-x[:2]-Rot.T@L
-        z_b=Rot@z_c
-        zpred=[np.sqrt(z_b[0,:]**2+z_b[1]**2),np.arctan2(z_b[1,:],z_b[0,:])]
-        zpred = zpred.T.ravel() # stack measurements along one dimension, [range1 bearing1 range2 bearing2 ...]
-
+    
+        z_c=np.array(m.T-x[:2]-Rot.T@L)
+        z_b=Rot@z_c.T
+        zpred=np.array([np.sqrt(z_b[0,:]**2+z_b[1]**2),np.arctan2(z_b[1,:],z_b[0,:])])
+        #zpred = zpred.T.ravel() # stack measurements along one dimension, [range1 bearing1 range2 bearing2 ...]
+        #input(zpred.shape)
+        zpred=zpred.T.ravel()
+        #input(zpred)
         assert (
             zpred.ndim == 1 and zpred.shape[0] == eta.shape[0] - 3
         ), "SLAM.h: Wrong shape on zpred"
@@ -221,24 +228,25 @@ class EKFSLAM:
         # extract states and map
         x = eta[0:3]
         ## reshape map (2, #landmarks), m[j] is the jth landmark
-        m = eta[3:].reshape((-1, 2)).T
+        m = eta[3:].reshape((-1, 2))#.T
 
         numM = m.shape[1]
 
         Rot = rotmat2d(x[2])
-
         delta_m = m-x[:2]# TODO, relative position of landmark to robot in world frame. m - rho that appears in (11.15) and (11.16)
-
-        zc = delta_m-Rot.T@L# TODO, (2, #measurements), each measured position in cartesian coordinates like
+        zc = delta_m-Rot.T@self.sensor_offset# TODO, (2, #measurements), each measured position in cartesian coordinates like
+        #zc=zc:T
         # [x coordinates;
         #  y coordinates]       
-
-        zb=Rot.T@delta_m-L #if needed
+        
+        #zb=[Rot.T@delta_m_i-self.sensor_offset for delta_m_i in delta_m] #if needed
         zpred = self.h(eta)# TODO (2, #measurements), predicted measurements, like
         # [ranges;
         #  bearings]
-        zr =zpred[0,:] # TODO, ranges
-
+        #input(zpred[::2])
+        zr=zpred[::2]
+        #zr =zpred[0,:] # TODO, ranges
+    
         Rpihalf = rotmat2d(np.pi / 2)
 
         # In what follows you can be clever and avoid making this for all the landmarks you _know_
@@ -255,13 +263,22 @@ class EKFSLAM:
         # proposed way is to go through landmarks one by one
         jac_z_cb = -np.eye(2, 3)  # preallocate and update this for some speed gain if looping
         for i in range(numM):  # But this whole loop can be vectorized
-            ind = 2 * i # starting postion of the ith landmark into H
-            inds = slice(ind, ind + 2)  # the inds slice for the ith landmark into H
             
+            ind1 = 2 * i # starting postion of the ith landmark into H
+            ind2=2*i+2
+            Hxi=np.block([[1/np.linalg.norm(delta_m[i])*delta_m[i].T,np.zeros((2,1))],[
+            1/np.linalg.norm(delta_m[i])**2*delta_m[i].T@Rpihalf,np.ones((2,1))]])
+            input()
+            """
+            #inds = slice(ind, ind + 2)  # the inds slice for the ith landmark into H
+            input(-Rpihalf@delta_m[i])
+            jac_z_cb=np.array([-np.eye(2,),-Rpihalf@delta_m[i]])
             # TODO: Set H or Hx and Hm here
-            Hx[slice(ind,ind+1),:]=zc[:,i].T/zr[i]@jac_z_cb
-            Hx[inds,:]=(zc[:,i]@Rpihalf.T)/zr[i]**2@jac_z_cb
-            Hm[inds+1:inds+2,inds+1:inds+2]=-Hx[inds,:2]
+
+            Hx[ind1,:]=zc[:,i].T/zr[i]@jac_z_cb
+            Hx[ind1+1,:]=(zc[:,i].T@Rpihalf.T)/zr[i]**2@jac_z_cb
+            Hm[ind1:ind2,ind1:ind2]=-Hx[ind1:ind2,:2]
+            """
         # TODO: You can set some assertions here to make sure that some of the structure in H is correct
         return H
 
@@ -411,10 +428,15 @@ class EKFSLAM:
             # Prediction and innovation covariance
             zpred = self.h(eta)
             H = self.H(eta)# TODO
-
+            print(zpred.shape)
+            input(H.shape)
+            print(zpred)
+            input(H)
             # Here you can use simply np.kron (a bit slow) to form the big (very big in VP after a while) R,
             # or be smart with indexing and broadcasting (3d indexing into 2d mat) realizing you are adding the same R on all diagonals
-            S = H@P@H.T+self.R# TODO,
+
+            #S = H@P.T@H.T+self.R# TODO,
+            S=np.kron(np.eye(numLmk),self.R)+H@P@H.T
             assert (
                 S.shape == zpred.shape * 2
             ), "EKFSLAM.update: wrong shape on either S or zpred"

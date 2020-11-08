@@ -163,7 +163,7 @@ for k, z_k in tqdm(enumerate(z[:N])):
         NISnorm[k] = 1
         CInorm[k].fill(1)
 
-    NEESes[k] = slam.NEESes(eta_hat[k][:3],P_hat[k],x_gt[k]) # TODO, use provided function slam.NEESes
+    NEESes[k] = slam.NEESes(eta_hat[k][:3],P_hat[k][:3,:3],poseGT[k]) # TODO, use provided function slam.NEESes. Maybe P is entirely wrong cause of dimensions
 
     if doAssoPlot and k > 0:
         axAsso.clear()
