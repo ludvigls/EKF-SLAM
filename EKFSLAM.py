@@ -46,7 +46,7 @@ class EKFSLAM:
         """
         
         head=utils.wrapToPi(x[2])
-        xpred = np.array([x[0]+u[0]*np.cos(head)+u[1]*np.sin(head),
+        xpred = np.array([x[0]+u[0]*np.cos(head)-u[1]*np.sin(head),
                  x[1]+u[0]*np.sin(head)+u[1]*np.cos(head),
                  head+u[2]])
                 # TODO, eq (11.7). Should wrap heading angle between (-pi, pi), see utils.wrapToPi
@@ -68,9 +68,9 @@ class EKFSLAM:
         np.ndarray
             The Jacobian of f wrt. x.
         """
-        head=utils.wrapToPi(x[2]) #remove?
-        Fx =np.array( [[1,0,-u[0]*np.sin(head)],
-              [0,1,u[0]*np.cos(head)-u[1]*np.sin(head)],
+        #head=utils.wrapToPi(x[2]) #remove?
+        Fx =np.array( [[1,0,-u[0]*np.sin(x[2])-u[1]*np.cos(x[2])],
+              [0,1,u[0]*np.cos(x[2])-u[1]*np.sin(x[2])],
               [0,0,1]])# TODO, eq (11.13)
 
         assert Fx.shape == (3, 3), "EKFSLAM.Fx: wrong shape"
@@ -91,9 +91,9 @@ class EKFSLAM:
         np.ndarray
             The Jacobian of f wrt. u.
         """
-        head=utils.wrapToPi(x[2]) #remove?
-        Fu = np.array([[np.cos(head),-np.sin(head),0],
-              [np.sin(head),np.cos(head),0],
+        #head=utils.wrapToPi(x[2]) #remove?
+        Fu = np.array([[np.cos(x[2]),-np.sin(x[2]),0],
+              [np.sin(x[2]),np.cos(x[2]),0],
               [0,0,1]])
         # TODO, eq (11.14)
         
@@ -141,8 +141,8 @@ class EKFSLAM:
         # cov matrix layout:
         # [[P_xx, P_xm],
         # [P_mx, P_mm]]
-        F=block_diag(Fx,np.eye(len(eta)-3,))
-        G=np.block([[np.eye(3,3)],[np.zeros((len(eta)-3,3))]])
+        #F=block_diag(Fx,np.eye(len(eta)-3,))
+        #G=np.block([[np.eye(3,3)],[np.zeros((len(eta)-3,3))]])
         """
         input(F)
         input(P[:3,:3])
@@ -183,18 +183,21 @@ class EKFSLAM:
         m = eta[3:].reshape((-1, 2)).T
 
         Rot = rotmat2d(-x[2]) 
-        """
+        
         # None as index ads an axis with size 1 at that position.
         # Numpy broadcasts size 1 dimensions to any size when needed
-        delta_m =R@m# TODO, relative position of landmark to sensor on robot in world frame
+
+        delta_m =m.T-x[None,:2]-L[None,:]# TODO, relative position of landmark to sensor on robot in world frame
             #aka map in sensor frame ^
 
-
-        zpredcart =  # TODO, predicted measurements in cartesian coordinates, beware sensor offset for VP
-
-        zpred_r = # TODO, ranges
-        zpred_theta = # TODO, bearings
-        zpred = # TODO, the two arrays above stacked on top of each other vertically like 
+        #zpredcart= #TODO
+        input(delta_m)
+        zpred_r =np.linalg.norm(delta_m) # TODO, ranges
+        zpred_theta = np.arctan2(delta_m[:,0],delta_m[:,1])# TODO, bearings
+        #zpred_theta=[np]
+        input(zpred_r)
+        input(xpred_theta)
+        zpred = np.hstack((zpred_r[:,None],xpred_theta[:,None])).ravel() # TODO, the two arrays above stacked on top of each other vertically like 
         # [ranges; 
         #  bearings]
         # into shape (2, #lmrk)
@@ -211,7 +214,7 @@ class EKFSLAM:
             zpred.ndim == 1 and zpred.shape[0] == eta.shape[0] - 3
         ), "SLAM.h: Wrong shape on zpred"
         return zpred
-
+        """
     def H(self, eta: np.ndarray) -> np.ndarray:
         """Calculate the jacobian of h.
 
@@ -233,8 +236,9 @@ class EKFSLAM:
         numM = m.shape[1]
 
         Rot = rotmat2d(x[2])
-        delta_m = m-x[:2]# TODO, relative position of landmark to robot in world frame. m - rho that appears in (11.15) and (11.16)
-        zc = delta_m-Rot.T@self.sensor_offset# TODO, (2, #measurements), each measured position in cartesian coordinates like
+        #delta_m = m-x[:2]# TODO, relative position of landmark to robot in world frame. m - rho that appears in (11.15) and (11.16)
+        delta_m= m - x[:2].T - rotmat2d(x[2]) @ self.sensor_offset.T
+        zc = [Rot @ m_i for m_i in delta_m.T]#  MAYBE WRONGTODO, (2, #measurements), each measured position in cartesian coordinates like
         #zc=zc:T
         # [x coordinates;
         #  y coordinates]       
@@ -263,7 +267,7 @@ class EKFSLAM:
         # proposed way is to go through landmarks one by one
         jac_z_cb = -np.eye(2, 3)  # preallocate and update this for some speed gain if looping
         for i in range(numM):  # But this whole loop can be vectorized
-            
+            """
             ind1 = 2 * i # starting postion of the ith landmark into H
             ind2=2*i+2
             Hxi=np.block([[1/np.linalg.norm(delta_m[i])*delta_m[i].T,np.zeros((2,1))],[
@@ -271,14 +275,13 @@ class EKFSLAM:
             input()
             """
             #inds = slice(ind, ind + 2)  # the inds slice for the ith landmark into H
-            input(-Rpihalf@delta_m[i])
-            jac_z_cb=np.array([-np.eye(2,),-Rpihalf@delta_m[i]])
+            jac_z_cb=-Rpihalf@delta_m[:,i]
             # TODO: Set H or Hx and Hm here
 
-            Hx[ind1,:]=zc[:,i].T/zr[i]@jac_z_cb
-            Hx[ind1+1,:]=(zc[:,i].T@Rpihalf.T)/zr[i]**2@jac_z_cb
-            Hm[ind1:ind2,ind1:ind2]=-Hx[ind1:ind2,:2]
-            """
+            Hx[inds,:][0,:]=delta_m[:,i].T/zr[i]@jac_z_cb
+            Hx[inds,:][1,:]=(delta_m[:,i].T@Rpihalf.T)/zr[i]**2@jac_z_cb
+            Hm[inds,inds]=Hx[inds,:2]
+        
         # TODO: You can set some assertions here to make sure that some of the structure in H is correct
         return H
 
@@ -321,21 +324,23 @@ class EKFSLAM:
             zj = z[inds]
 
             rot =rotmat2d(eta[2]+zj[1]) # TODO, rotmat in Gz
-            lmnew[inds] =zj[0]*rot[:,0]+eta[:2]+rot@self.sensor_offset # TODO, calculate position of new landmark in world frame
+            lmnew[inds] =rotmat2d(eta[2])@(zj[0] * np.array([np.cos(zj[1]), np.sin(zj[1])]))+eta[:2]+sensor_offset_world # TODO, calculate position of new landmark in world frame
 
-            Gx[inds, :2] = np.eye(2)# TODO
-            Gx[inds, 2] = zj[0]*np.array([-np.sin(zj[1]+eta[2]),np.cos(zj[1]+eta[2])]).T# TODO
+            Gx[inds, :2] =I2# TODO
+            #Gx[inds, 2] = zj[0]*np.array([-np.sin(zj[1]+eta[2]),np.cos(zj[1]+eta[2])]).T# TODO
+            Gx[inds,2]=zj[0]*rot[:,1]+sensor_offset_world_der
 
-            Gz =rot@np.diag([1,zj[1]]) # TODO
+            Gz =rot@np.diag([1,zj[0]]) # TODO
 
             Rall[inds, inds] = Gz@self.R@Gz.T# TODO, Gz * R * Gz^T, transform measurement covariance from polar to cartesian coordinates
 
         assert len(lmnew) % 2 == 0, "SLAM.add_landmark: lmnew not even length"
-        etaadded = np.append(eta,lmnew)# TODO, append new landmarks to state vector
-        Padded = block_diag(P,Gx@P[:3,:3]@Gx.T+Rall)# TODO, block diagonal of P_new, see problem text in 1g) in graded assignment 3
+        etaadded = np.append(eta,lmnew)# Maube wrongTODO, append new landmarks to state vector
+        Padded = block_diag(P,Gx@P[:3,:3]@Gx.T+Rall.T)# TODO, block diagonal of P_new, see problem text in 1g) in graded assignment 3
         Padded[n:,:n] = Gx@P[:3,:]# TODO, top right corner of P_new
+        #Padded[n:,:n] = P[:,:3]@Gx.T
         Padded[:n, n:] = Padded[n:,:n].T# TODO, transpose of above. Should yield the same as calcualion, but this enforces symmetry and should be cheaper
-
+        #Padded[:n, n:] =(Padded[:n,n:]).T
         assert (
             etaadded.shape * 2 == Padded.shape
         ), "EKFSLAM.add_landmarks: calculated eta and P has wrong shape"
@@ -428,14 +433,12 @@ class EKFSLAM:
             # Prediction and innovation covariance
             zpred = self.h(eta)
             H = self.H(eta)# TODO
-            print(zpred.shape)
-            input(H.shape)
-            print(zpred)
-            input(H)
+     
             # Here you can use simply np.kron (a bit slow) to form the big (very big in VP after a while) R,
             # or be smart with indexing and broadcasting (3d indexing into 2d mat) realizing you are adding the same R on all diagonals
 
             #S = H@P.T@H.T+self.R# TODO,
+            #should prob switch R?
             S=np.kron(np.eye(numLmk),self.R)+H@P@H.T
             assert (
                 S.shape == zpred.shape * 2
@@ -457,8 +460,8 @@ class EKFSLAM:
                 v[1::2] = utils.wrapToPi(v[1::2])
 
                 # Kalman mean update
-                # S_cho_factors = la.cho_factor(Sa) # Optional, used in places for S^-1, see scipy.linalg.cho_factor and scipy.linalg.cho_solve
-                W = P@H.T@np.linalg.inv(S)# TODO, Kalman gain, can use S_cho_factors
+                #S_cho_factors = la.cho_factor(Sa) # Optional, used in places for S^-1, see scipy.linalg.cho_factor and scipy.linalg.cho_solve
+                W = P@Ha.T@np.linalg.inv(Sa)# TODO, Kalman gain, can use S_cho_factors
                 etaupd =eta+W@v # TODO, Kalman update
 
                 # Kalman cov update: use Joseph form for stability
@@ -478,7 +481,7 @@ class EKFSLAM:
         else:  # All measurements are new landmarks,
             a = np.full(z.shape[0], -1)
             z = z.flatten()
-            NIS = 0 # TODO: beware this one, you can change the value to for instance 1
+            NIS = 1 # TODO: beware this one, you can change the value to for instance 1
             etaupd = eta
             Pupd = P
 
