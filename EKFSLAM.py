@@ -5,7 +5,7 @@ import scipy.linalg as la
 from utils import rotmat2d
 from JCBB import JCBB
 import utils
-
+import numpy.matlib
 # import line_profiler
 # import atexit
 
@@ -187,17 +187,20 @@ class EKFSLAM:
         # None as index ads an axis with size 1 at that position.
         # Numpy broadcasts size 1 dimensions to any size when needed
 
-        delta_m =m.T-x[None,:2]-L[None,:]# TODO, relative position of landmark to sensor on robot in world frame
+        delta_m =m-x[:2,None]-(Rot@L)[:,None]# TODO, relative position of landmark to sensor on robot in world frame
             #aka map in sensor frame ^
 
         #zpredcart= #TODO
-        input(delta_m)
-        zpred_r =np.linalg.norm(delta_m) # TODO, ranges
-        zpred_theta = np.arctan2(delta_m[:,0],delta_m[:,1])# TODO, bearings
-        #zpred_theta=[np]
-        input(zpred_r)
-        input(xpred_theta)
-        zpred = np.hstack((zpred_r[:,None],xpred_theta[:,None])).ravel() # TODO, the two arrays above stacked on top of each other vertically like 
+        #input(delta_m)
+        #zpred_r =np.linalg.norm(delta_m) # TODO, ranges
+        #zpred_r=[np.linalg.norm(xy) for xy in delta_m]
+        #zpred_theta = np.arctan2(delta_m[:,0],delta_m[:,1])# TODO, bearings
+        #zpred_theta=[np.arctan2(xy[1],xy[0]) for xy in delta_m]
+        zpred_r=np.linalg.norm(delta_m,axis=0)
+        zpred_theta=np.arctan(delta_m[0],delta_m[1])#change 1 and 0?
+        #zpred = np.hstack((zpred_r[:,None],xpred_theta[:,None])).ravel() # TODO, the two arrays above stacked on top of each other vertically like 
+        #zpred=np.row_stack((zpred_theta,zpred_r)).T.ravel()
+        zpred=np.vstack((zpred_r,zpred_theta)).T.ravel()
         # [ranges; 
         #  bearings]
         # into shape (2, #lmrk)
@@ -209,12 +212,14 @@ class EKFSLAM:
         #zpred = zpred.T.ravel() # stack measurements along one dimension, [range1 bearing1 range2 bearing2 ...]
         #input(zpred.shape)
         zpred=zpred.T.ravel()
+        """
         #input(zpred)
         assert (
             zpred.ndim == 1 and zpred.shape[0] == eta.shape[0] - 3
         ), "SLAM.h: Wrong shape on zpred"
         return zpred
-        """
+    
+       
     def H(self, eta: np.ndarray) -> np.ndarray:
         """Calculate the jacobian of h.
 
@@ -231,13 +236,16 @@ class EKFSLAM:
         # extract states and map
         x = eta[0:3]
         ## reshape map (2, #landmarks), m[j] is the jth landmark
-        m = eta[3:].reshape((-1, 2))#.T
+        m = eta[3:].reshape((-1, 2)).T
 
         numM = m.shape[1]
 
         Rot = rotmat2d(x[2])
         #delta_m = m-x[:2]# TODO, relative position of landmark to robot in world frame. m - rho that appears in (11.15) and (11.16)
-        delta_m= m - x[:2].T - rotmat2d(x[2]) @ self.sensor_offset.T
+        #delta_m= m - x[:2].T - rotmat2d(x[2]) @ self.sensor_offset.T #maube change x
+    
+        delta_m = (m - x[:2].reshape(2, 1) - rotmat2d(x[2]) @ self.sensor_offset.reshape(2, 1))
+        #input(delta_m)
         zc = [Rot @ m_i for m_i in delta_m.T]#  MAYBE WRONGTODO, (2, #measurements), each measured position in cartesian coordinates like
         #zc=zc:T
         # [x coordinates;
@@ -274,15 +282,19 @@ class EKFSLAM:
             1/np.linalg.norm(delta_m[i])**2*delta_m[i].T@Rpihalf,np.ones((2,1))]])
             input()
             """
-            #inds = slice(ind, ind + 2)  # the inds slice for the ith landmark into H
+            ind=2*i
+            inds = slice(ind, ind + 2)  # the inds slice for the ith landmark into H
+     
             jac_z_cb=-Rpihalf@delta_m[:,i]
+          
             # TODO: Set H or Hx and Hm here
-
+        
             Hx[inds,:][0,:]=delta_m[:,i].T/zr[i]@jac_z_cb
             Hx[inds,:][1,:]=(delta_m[:,i].T@Rpihalf.T)/zr[i]**2@jac_z_cb
             Hm[inds,inds]=Hx[inds,:2]
         
         # TODO: You can set some assertions here to make sure that some of the structure in H is correct
+        assert H.shape[0]==2*numM and H.shape[1]==3+2*numM, "Wrong dim of H"
         return H
 
     def add_landmarks(
@@ -335,11 +347,11 @@ class EKFSLAM:
             Rall[inds, inds] = Gz@self.R@Gz.T# TODO, Gz * R * Gz^T, transform measurement covariance from polar to cartesian coordinates
 
         assert len(lmnew) % 2 == 0, "SLAM.add_landmark: lmnew not even length"
-        etaadded = np.append(eta,lmnew)# Maube wrongTODO, append new landmarks to state vector
+        etaadded = np.concatenate([eta[:],lmnew])# Maube wrongTODO, append new landmarks to state vector
         Padded = block_diag(P,Gx@P[:3,:3]@Gx.T+Rall.T)# TODO, block diagonal of P_new, see problem text in 1g) in graded assignment 3
-        Padded[n:,:n] = Gx@P[:3,:]# TODO, top right corner of P_new
-        #Padded[n:,:n] = P[:,:3]@Gx.T
-        Padded[:n, n:] = Padded[n:,:n].T# TODO, transpose of above. Should yield the same as calcualion, but this enforces symmetry and should be cheaper
+        #Padded[n:,:n] = Gx@P[:3,:]# TODO, top right corner of P_new CJAMGE MAYBE
+        Padded[:n,n:] = P[:,:3]@Gx.T
+        Padded[n:,:n] = Padded[:n,n:].T# TODO, transpose of above. Should yield the same as calcualion, but this enforces symmetry and should be cheaper
         #Padded[:n, n:] =(Padded[:n,n:]).T
         assert (
             etaadded.shape * 2 == Padded.shape
@@ -439,7 +451,9 @@ class EKFSLAM:
 
             #S = H@P.T@H.T+self.R# TODO,
             #should prob switch R?
-            S=np.kron(np.eye(numLmk),self.R)+H@P@H.T
+            R=np.diag(np.diagonal(np.matlib.repmat(self.R, numLmk, numLmk)))
+  
+            S=H@P@H.T+R
             assert (
                 S.shape == zpred.shape * 2
             ), "EKFSLAM.update: wrong shape on either S or zpred"
@@ -470,7 +484,8 @@ class EKFSLAM:
                 Pupd = jo@P# TODO, Kalman update. This is the main workload on VP after speedups
 
                 # calculate NIS, can use S_cho_factors
-                NIS = v.T@np.linalg.inv(S)@v # TODO
+                
+                NIS = v.T@np.linalg.inv(Sa)@v # TODO
 
                 # When tested, remove for speed
                 assert np.allclose(Pupd, Pupd.T), "EKFSLAM.update: Pupd not symmetric"
@@ -494,7 +509,7 @@ class EKFSLAM:
                 z_new_inds[1::2] = is_new_lmk
                 z_new = z[z_new_inds]
                 etaupd, Pupd = self.add_landmarks(eta,P,z_new)# TODO, add new landmarks.
-
+                #maybe wrong
         assert np.allclose(Pupd, Pupd.T), "EKFSLAM.update: Pupd must be symmetric"
         assert np.all(np.linalg.eigvals(Pupd) >= 0), "EKFSLAM.update: Pupd must be PSD"
 

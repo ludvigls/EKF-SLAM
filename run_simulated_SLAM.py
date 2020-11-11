@@ -94,7 +94,8 @@ poseGT = simSLAM_ws["poseGT"].T
 
 K = len(z)
 M = len(landmarks)
-
+K=10
+input(K)
 # %% Initilize
 Q = np.eye(3,)# TODO
 R = np.eye(2,)# TODO
@@ -142,11 +143,11 @@ N = K
 print("starting sim (" + str(N) + " iterations)")
 
 for k, z_k in tqdm(enumerate(z[:N])):
-    eta_hat[k], P_hat[k], NIS[k], a[k] = slam.update(eta_pred[k],P_pred[k],z[k])# TODO update
-    print("z_k directly ")
+    eta_hat[k], P_hat[k], NIS[k], a[k] = slam.update(eta_pred[k],P_pred[k],z_k)# TODO update
+  
   
     if k < K - 1:
-        eta_pred[k + 1], P_pred[k + 1] = slam.predict(eta_hat[k],P_hat[k],odometry[:,k])
+        eta_pred[k + 1], P_pred[k + 1] = slam.predict(eta_hat[k],P_hat[k],odometry[k])
 
     assert (
         eta_hat[k].shape[0] == P_hat[k].shape[0]
