@@ -92,20 +92,18 @@ landmarks = simSLAM_ws["landmarks"].T
 odometry = simSLAM_ws["odometry"].T
 poseGT = simSLAM_ws["poseGT"].T
 
-K = len(z)
 M = len(landmarks)
-K=150 #50
+K = 1000 #len(z)
+
 # %% Initilize
-Q = np.diag([10,10,1])#10*np.eye(3,)# TODO 
-R = np.eye(2,)# TODO
-Q = np.diag([0.001, 0.010, 0.0901])  
-R = np.diag([0.0015, 0.0006])
+Q = np.diag([0.01, 0.10, 0.00045])
+R = np.diag([0.0012, 0.0004])
 
 
 doAsso = True
 
 JCBBalphas = np.array(
-  [10e-4, 10e-6])
+  [0.001, 0.0001])#[10e-4, 10e-6])
 #)  # first is for joint compatibility, second is individual
 # these can have a large effect on runtime either through the number of landmarks created
 # or by the size of the association search space.
@@ -128,8 +126,8 @@ NEESes = np.zeros((K, 3))
 #alpha = 0.05
 alpha=0.95
 # init
-eta_pred[0] = poseGT[0]  # we start at the correct position for reference
-P_pred[0] = np.zeros((3, 3))  # we also say that we are 100% sure about that
+eta_pred[0] = poseGT[0]  # start at correct position
+P_pred[0] = np.zeros((3, 3))  # 100% sure
 
 # %% Set up plotting
 # plotting
@@ -316,4 +314,6 @@ if playMovie:
         )
 
 plt.show()
+plt.ioff()
+
 # %%
