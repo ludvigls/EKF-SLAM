@@ -94,7 +94,7 @@ poseGT = simSLAM_ws["poseGT"].T
 
 K = len(z)
 M = len(landmarks)
-K=50
+K=150 #50
 # %% Initilize
 Q = np.diag([10,10,1])#10*np.eye(3,)# TODO 
 R = np.eye(2,)# TODO

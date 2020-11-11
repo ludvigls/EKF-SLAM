@@ -165,53 +165,46 @@ class EKFSLAM:
         return etapred, P
 
     def h(self, eta: np.ndarray) -> np.ndarray:
-        
         """Predict all the landmark positions in sensor frame.
-
         Parameters
         ----------
         eta : np.ndarray, shape=(3 + 2 * #landmarks,)
             The robot state and landmarks stacked.
-
         Returns
         -------
         np.ndarray, shape=(2 * #landmarks,)
             The landmarks in the sensor frame.
         """
-        
-        L=self.sensor_offset
         # extract states and map
         x = eta[0:3]
-        ## reshape map (2, #landmarks), m[:, j] is the jth landmark
+        # reshape map (2, #landmarks), m[:, j] is the jth landmark
         m = eta[3:].reshape((-1, 2)).T
 
-        Rot = rotmat2d(-x[2]) 
-        
+        Rot = rotmat2d(-x[2]*0)
+
         # None as index ads an axis with size 1 at that position.
         # Numpy broadcasts size 1 dimensions to any size when needed
+        # TODO, relative position of landmark to sensor on robot in world frame
+        delta_m = (m - x[:2].reshape(2, 1)
+                   - rotmat2d(x[2]) @ (self.sensor_offset).reshape(2, 1))
 
-        delta_m =m-x[:2,None]-(Rot@L)[:,None]# TODO, relative position of landmark to sensor on robot in world frame
-            #aka map in sensor frame ^
+        # TODO, predicted measurements in cartesian coordinates, beware sensor offset for VP
 
-        #zpredcart= #TODO
-        #input(delta_m)
-        #zpred_r =np.linalg.norm(delta_m) # TODO, ranges
-        #zpred_r=[np.linalg.norm(xy) for xy in delta_m]
-        #zpred_theta = np.arctan2(delta_m[:,0],delta_m[:,1])# TODO, bearings
-        #zpred_theta=[np.arctan2(xy[1],xy[0]) for xy in delta_m]
-        zpred_r=np.linalg.norm(delta_m,axis=0)
-        zpred_theta=utils.wrapToPi(np.arctan(delta_m[1],delta_m[0]))#change 1 and 0?
-        #zpred = np.hstack((zpred_r[:,None],xpred_theta[:,None])).ravel() # TODO, the two arrays above stacked on top of each other vertically like 
-        #zpred=np.row_stack((zpred_theta,zpred_r)).T.ravel()
-        zpred=np.vstack((zpred_r,zpred_theta)).T.ravel()
-        # [ranges; 
+        zpred_r = np.linalg.norm(delta_m.T, axis=1)  # TODO, ranges
+        zpred_theta = utils.wrapToPi(np.arctan2(delta_m[1, :], delta_m[0, :])
+                               - x[2])
+        # TODO, the two arrays above stacked on top of each other vertically like
+        zpred = np.vstack([zpred_r, zpred_theta]).T
+        # [ranges;
         #  bearings]
         # into shape (2, #lmrk)
 
-        #input(zpred)
-        assert (
-            zpred.ndim == 1 and zpred.shape[0] == eta.shape[0] - 3
-        ), "SLAM.h: Wrong shape on zpred"
+        # stack measurements along one dimension, [range1 bearing1 range2 bearing2 ...]
+        zpred = zpred.ravel()
+
+        # assert (
+        #     zpred.ndim == 1 and zpred.shape[0] == eta.shape[0] - 3
+        # ), "SLAM.h: Wrong shape on zpred"
         return zpred
     
     
