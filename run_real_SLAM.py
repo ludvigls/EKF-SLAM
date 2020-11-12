@@ -107,15 +107,14 @@ b = 0.5  # laser distance to the left of center
 car = Car(L, H, a, b)
 
 sigmas = [0.01, 0.10, 0.00045] # TODO
-sigmas=[0.01,0.01,0.0001]
+
 CorrCoeff = np.array([[1, 0, 0], [0, 1, 0.9], [0, 0.9, 1]])
 Q = np.diag(sigmas) @ CorrCoeff @ np.diag(sigmas)
 
-R = np.diag([0.0012, 0.0004])# TODO
-R=np.diag([0.25,0.0025])
-JCBBalphas = np.array(
+R=2*np.diag([0.0012, 0.0004])
+JCBBalphas = 5*np.array(
     # TODO
-    [0.001, 0.00001]
+    [0.001, 0.0001]
 )
 #JCBBalphas=np.array([1e-5, 1e-3])
 sensorOffset = np.array([car.a + car.L, car.b])
@@ -143,7 +142,7 @@ mk = mk_first
 t = timeOdo[0]
 
 # %%  run
-N = K
+N = int(K*0.5)
 
 doPlot = False
 
@@ -187,6 +186,7 @@ for k in tqdm(range(N)):
         num_asso = np.count_nonzero(a[mk] > -1)
         if k%50==0:
             print()
+            print((len(eta)-3)/2)
             print(num_asso)
 
         if num_asso > 0:
