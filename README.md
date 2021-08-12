@@ -5,11 +5,11 @@ In this repo Simultanious Localization and Mapping (SLAM) was implemented and tu
 ## Running
 The simulated dataset can be ran on the command line using
 ```
-python3 run_real_SLAM.py
+python3 run_simulated_SLAM.py
 ```
 The real life dataset can be ran on the command line using
 ```
-python3 run_simulated_SLAM.py
+python3 run_real_SLAM.py
 ```
 ## Report
 See report.pdf for details
